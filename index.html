@@ -151,28 +151,28 @@
                 {
                     start: 0,
                     end: 6,
-                    image: 'images/night.jpg',
+                    image: 'images/night.png',
                     name: '深夜星空',
                     emoji: '🌙'
                 },
                 {
                     start: 6,
                     end: 18,
-                    image: 'images/morning.jpg',
+                    image: 'images/morning.png',
                     name: '白日時光',
                     emoji: '🌅'
                 },
                 {
                     start: 18,
                     end: 24,
-                    image: 'images/evening.jpg',
+                    image: 'images/evening.png',
                     name: '夜晚時分',
                     emoji: '🌇'
                 }
             ],
 
             // 備用圖片設定
-            fallbackImage: 'images/default.jpg',
+            fallbackImage: 'images/default.png',
 
             // 更新頻率設定（毫秒）
             updateIntervals: {
@@ -397,7 +397,7 @@
 
             // 測試備用圖片
             testFallback: () => {
-                const fakeSlot = { image: 'fake-image.jpg', name: '測試', emoji: '🧪' };
+                const fakeSlot = { image: 'fake-image.png', name: '測試', emoji: '🧪' };
                 CONFIG.timeSlots[0] = fakeSlot;
                 currentImageUrl = '';
                 updateBanner();

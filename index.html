@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WindOS Dynamic Banner - Test Version</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            width: 100%;
+            height: 100vh;
+            overflow: hidden;
+            background: #1a1a1a;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        /* 主要圖片容器 */
+        #banner-container {
+            position: relative;
+            width: 100%;
+            height: 100%;
+        }
+
+        #banner {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transition: opacity 1.5s ease-in-out;
+        }
+
+        #banner.fade {
+            opacity: 0;
+        }
+
+        /* 載入中顯示 */
+        #loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
+            font-size: 18px;
+            text-shadow: 2px 2px 8px rgba(0, 0, 0, 0.8);
+            display: none;
+        }
+
+        #loading.show {
+            display: block;
+        }
+
+        /* 時間顯示區域 */
+        #time-overlay {
+            position: absolute;
+            top: 20px;
+            right: 30px;
+            color: white;
+            text-shadow: 2px 2px 8px rgba(0, 0, 0, 0.8);
+            background: rgba(0, 0, 0, 0.4);
+            padding: 12px 20px;
+            border-radius: 12px;
+            backdrop-filter: blur(15px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        #time-overlay .time {
+            font-size: 28px;
+            font-weight: 300;
+            letter-spacing: 3px;
+            margin-bottom: 4px;
+        }
+
+        #time-overlay .period {
+            font-size: 14px;
+            opacity: 0.9;
+            text-align: center;
+        }
+
+        /* 狀態指示器 */
+        #status-indicator {
+            position: absolute;
+            bottom: 20px;
+            left: 30px;
+            color: white;
+            font-size: 12px;
+            background: rgba(0, 0, 0, 0.3);
+            padding: 8px 16px;
+            border-radius: 8px;
+            backdrop-filter: blur(10px);
+            opacity: 0.7;
+        }
+
+        /* 錯誤顯示 */
+        #error-message {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: #ff6b6b;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+            display: none;
+        }
+
+        #error-message.show {
+            display: block;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="banner-container">
+        <img id="banner" src="" alt="WindOS Banner">
+
+        <div id="loading">
+            <div>載入中...</div>
+        </div>
+
+        <div id="error-message">
+            <div>圖片載入失敗</div>
+            <div style="font-size: 12px; margin-top: 8px; opacity: 0.7;">已切換至備用圖片</div>
+        </div>
+    </div>
+
+    <!-- 時間顯示 -->
+    <div id="time-overlay">
+        <div class="time" id="current-time"></div>
+        <div class="period" id="current-period"></div>
+    </div>
+
+    <!-- 狀態指示器 -->
+    <div id="status-indicator">
+        <div id="status-text">系統正常</div>
+    </div>
+
+    <script>
+        // ==========================================
+        // 🎯 主要配置區域 - 你可以在這裡調整設定
+        // ==========================================
+
+        const CONFIG = {
+            // 時間區段設定 - 你可以調整時間和圖片
+            timeSlots: [
+                {
+                    start: 0,
+                    end: 6,
+                    image: 'images/night.jpg',
+                    name: '深夜星空',
+                    emoji: '🌙'
+                },
+                {
+                    start: 6,
+                    end: 18,
+                    image: 'images/morning.jpg',
+                    name: '白日時光',
+                    emoji: '🌅'
+                },
+                {
+                    start: 18,
+                    end: 24,
+                    image: 'images/evening.jpg',
+                    name: '夜晚時分',
+                    emoji: '🌇'
+                }
+            ],
+
+            // 備用圖片設定
+            fallbackImage: 'images/default.jpg',
+
+            // 更新頻率設定（毫秒）
+            updateIntervals: {
+                time: 60000,      // 時間更新：每分鐘
+                banner: 300000,   // 圖片檢查：每5分鐘
+                force: 3600000    // 強制更新：每小時
+            },
+
+            // 動畫設定
+            animation: {
+                fadeTime: 300,    // 淡出時間（毫秒）
+                transitionTime: 1500  // CSS 過渡時間（毫秒）
+            }
+        };
+
+        // ==========================================
+        // 🔧 核心功能區域 - 一般不需要修改
+        // ==========================================
+
+        let currentImageUrl = '';
+        let imageLoadAttempts = 0;
+        const maxLoadAttempts = 3;
+
+        // 取得當前時段
+        function getCurrentTimeSlot() {
+            const now = new Date();
+            const hour = now.getHours();
+
+            for (let slot of CONFIG.timeSlots) {
+                if (hour >= slot.start && hour < slot.end) {
+                    return slot;
+                }
+            }
+            return CONFIG.timeSlots[0]; // 預設返回第一個時段
+        }
+
+        // 顯示載入狀態
+        function showLoading(show = true) {
+            const loading = document.getElementById('loading');
+            if (show) {
+                loading.classList.add('show');
+            } else {
+                loading.classList.remove('show');
+            }
+        }
+
+        // 顯示錯誤訊息
+        function showError(show = true) {
+            const error = document.getElementById('error-message');
+            if (show) {
+                error.classList.add('show');
+                setTimeout(() => error.classList.remove('show'), 3000);
+            } else {
+                error.classList.remove('show');
+            }
+        }
+
+        // 更新狀態指示器
+        function updateStatus(message) {
+            document.getElementById('status-text').textContent = message;
+        }
+
+        // 載入圖片（帶備用機制）
+        function loadImageWithFallback(imageUrl, isRetry = false) {
+            return new Promise((resolve, reject) => {
+                const img = new Image();
+
+                img.onload = () => {
+                    resolve(imageUrl);
+                };
+
+                img.onerror = () => {
+                    if (!isRetry) {
+                        console.warn(`圖片載入失敗: ${imageUrl}，嘗試載入備用圖片`);
+                        updateStatus('圖片載入失敗，使用備用圖片');
+
+                        // 嘗試載入備用圖片
+                        loadImageWithFallback(CONFIG.fallbackImage, true)
+                            .then(resolve)
+                            .catch(reject);
+                    } else {
+                        console.error(`備用圖片也載入失敗: ${imageUrl}`);
+                        reject(new Error('所有圖片都載入失敗'));
+                    }
+                };
+
+                img.src = imageUrl;
+            });
+        }
+
+        // 更新 Banner 圖片
+        async function updateBanner() {
+            const slot = getCurrentTimeSlot();
+            const bannerImg = document.getElementById('banner');
+
+            // 如果圖片沒變，就不更新
+            if (currentImageUrl === slot.image) {
+                return;
+            }
+
+            console.log(`切換到時段: ${slot.name} (${slot.start}-${slot.end})`);
+            updateStatus(`載入${slot.name}圖片中...`);
+
+            try {
+                // 顯示載入狀態
+                showLoading(true);
+                bannerImg.classList.add('fade');
+
+                // 載入圖片（帶備用機制）
+                const imageUrl = await loadImageWithFallback(slot.image);
+
+                setTimeout(() => {
+                    bannerImg.src = imageUrl;
+                    currentImageUrl = slot.image;
+
+                    // 圖片載入後淡入
+                    bannerImg.onload = () => {
+                        bannerImg.classList.remove('fade');
+                        showLoading(false);
+                        updateStatus(`${slot.emoji} ${slot.name}`);
+                    };
+                }, CONFIG.animation.fadeTime);
+
+            } catch (error) {
+                console.error('圖片更新失敗:', error);
+                showError(true);
+                showLoading(false);
+                updateStatus('圖片載入失敗');
+            }
+        }
+
+        // 更新時間顯示
+        function updateTime() {
+            const now = new Date();
+            const timeStr = now.toLocaleTimeString('zh-TW', {
+                hour: '2-digit',
+                minute: '2-digit',
+                hour12: false
+            });
+
+            const slot = getCurrentTimeSlot();
+
+            document.getElementById('current-time').textContent = timeStr;
+            document.getElementById('current-period').textContent = `${slot.emoji} ${slot.name}`;
+        }
+
+        // ==========================================
+        // 🚀 初始化和定時器
+        // ==========================================
+
+        // 初始化
+        async function init() {
+            console.log('WindOS Banner 初始化中...');
+            updateStatus('系統初始化中...');
+
+            try {
+                await updateBanner();
+                updateTime();
+                updateStatus('系統就緒');
+                console.log('WindOS Banner 初始化完成');
+            } catch (error) {
+                console.error('初始化失敗:', error);
+                updateStatus('初始化失敗');
+            }
+        }
+
+        // 設定定時器
+        function setupTimers() {
+            // 每分鐘更新時間
+            setInterval(updateTime, CONFIG.updateIntervals.time);
+
+            // 每 5 分鐘檢查是否需要切換圖片
+            setInterval(updateBanner, CONFIG.updateIntervals.banner);
+
+            // 每小時強制檢查一次
+            setInterval(() => {
+                console.log('執行強制更新檢查');
+                updateBanner();
+            }, CONFIG.updateIntervals.force);
+        }
+
+        // 頁面載入完成後初始化
+        document.addEventListener('DOMContentLoaded', () => {
+            init();
+            setupTimers();
+        });
+
+        // 頁面重新獲得焦點時更新（從其他分頁回來時）
+        document.addEventListener('visibilitychange', () => {
+            if (!document.hidden) {
+                console.log('頁面重新獲得焦點，更新 Banner');
+                updateBanner();
+                updateTime();
+            }
+        });
+
+        // ==========================================
+        // 🎯 除錯用功能 - 你可以在瀏覽器 Console 使用
+        // ==========================================
+
+        // 全域函數，方便除錯
+        window.WindOSBanner = {
+            // 手動切換到指定時段
+            switchToSlot: (slotIndex) => {
+                if (slotIndex >= 0 && slotIndex < CONFIG.timeSlots.length) {
+                    const slot = CONFIG.timeSlots[slotIndex];
+                    currentImageUrl = ''; // 強制更新
+                    CONFIG.timeSlots.forEach((s, i) => {
+                        if (i === slotIndex) {
+                            s.start = new Date().getHours();
+                            s.end = new Date().getHours() + 1;
+                        }
+                    });
+                    updateBanner();
+                }
+            },
+
+            // 顯示當前配置
+            showConfig: () => {
+                console.table(CONFIG.timeSlots);
+            },
+
+            // 測試備用圖片
+            testFallback: () => {
+                const fakeSlot = { image: 'fake-image.jpg', name: '測試', emoji: '🧪' };
+                CONFIG.timeSlots[0] = fakeSlot;
+                currentImageUrl = '';
+                updateBanner();
+            }
+        };
+    </script>
+</body>
+
+</html>
